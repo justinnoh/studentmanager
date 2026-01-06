@@ -1,31 +1,33 @@
-# Student Management System (Flutter + Supabase)
+# 학생 관리 시스템 (Flutter + Supabase)
 
-This is a student management application built with **Flutter** for the frontend and **Supabase** for the backend (Auth, Database, Edge Functions).
+이 프로젝트는 **Flutter** (프론트엔드)와 **Supabase** (백엔드 - Auth, Database, Edge Functions)를 사용하여 구축된 학생 관리 애플리케이션입니다.
 
-## Features
-- **Admin**:
-    - Manage students (List, Create, Update, Delete)
-    - View dashboard statistics (Attendance rate, Message count)
-    - 1:1 Chat with students
-    - Manage attendance
-- **Student**:
-    - View attendance history
-    - 1:1 Chat with teachers (Admins)
-    - View profile
+## 주요 기능
+- **관리자 (선생님)**:
+    - 학생 관리 (목록 조회, 등록, 정보 수정, 삭제)
+    - 대시보드 통계 확인 (출석률, 미확인 메시지 건수 등)
+    - 학생과 1:1 실시간 상담 채팅
+    - 출석 관리 및 체크
+- **학생**:
+    - 나의 출석 기록 조회
+    - 선생님(관리자)과 1:1 실시간 상담 채팅
+    - 내 프로필 조회
 
-## Prerequisites
-- [Flutter SDK](https://docs.flutter.dev/get-started/install)
-- [Supabase Account](https://supabase.com/)
+## 필수 조건
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) 설치
+- [Supabase 계정](https://supabase.com/) 생성
 
-## Setup
+## 설치 및 설정 가이드
 
-### 1. Supabase Project Setup
-1. Create a new Supabase project.
-2. Run the following SQL queries in the Supabase SQL Editor to set up tables and policies.
+### 1. Supabase 프로젝트 설정
+1. Supabase 대시보드에서 새 프로젝트를 생성합니다.
+2. 좌측 메뉴의 `SQL Editor`로 이동하여 아래의 SQL 쿼리를 실행하여 테이블과 보안 정책(RLS)을 설정합니다.
 
-#### Database Schema & Policies
+#### 데이터베이스 스키마 및 권한 정책 (RLS) SQL
+아래 스크립트를 복사하여 실행하세요.
+
 ```sql
--- Users Table
+-- Users (사용자) 테이블
 CREATE TABLE public.users (
     id UUID REFERENCES auth.users(id) PRIMARY KEY,
     email TEXT NOT NULL,
@@ -39,17 +41,17 @@ CREATE TABLE public.users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Enable RLS
+-- RLS (Row Level Security) 활성화
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
--- Policies for Users
+-- 정책 (Policies)
 CREATE POLICY "Users can view own profile" ON public.users FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Admins can view all users" ON public.users FOR SELECT TO authenticated USING (is_admin());
 CREATE POLICY "Anyone can view admins" ON public.users FOR SELECT TO authenticated USING (role = 'admin');
 CREATE POLICY "Admins can insert users" ON public.users FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM public.users WHERE id = auth.uid() AND role = 'admin'));
 CREATE POLICY "Admins can update users" ON public.users FOR UPDATE USING (is_admin());
 
--- Is Admin Function
+-- 관리자 확인 함수 (보안 정의)
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS boolean AS $$
 BEGIN
@@ -61,7 +63,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Attendance Table
+-- Attendance (출석) 테이블
 CREATE TABLE public.attendance (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     student_id UUID REFERENCES public.users(id) NOT NULL,
@@ -74,12 +76,12 @@ CREATE TABLE public.attendance (
 
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 
--- Policies for Attendance
+-- 출석 관련 정책
 CREATE POLICY "Students can view own attendance" ON public.attendance FOR SELECT USING (student_id = auth.uid());
 CREATE POLICY "Students can insert own attendance" ON public.attendance FOR INSERT WITH CHECK (student_id = auth.uid());
 CREATE POLICY "Admins can manage all attendance" ON public.attendance FOR ALL USING (is_admin());
 
--- Chat Rooms Table
+-- Chat Rooms (상담 채팅방) 테이블
 CREATE TABLE public.chat_rooms (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     student_id UUID REFERENCES public.users(id) NOT NULL,
@@ -90,11 +92,11 @@ CREATE TABLE public.chat_rooms (
 
 ALTER TABLE public.chat_rooms ENABLE ROW LEVEL SECURITY;
 
--- Policies for Chat Rooms
+-- 채팅방 정책
 CREATE POLICY "Participants can view rooms" ON public.chat_rooms FOR SELECT USING (auth.uid() = admin_id OR auth.uid() = student_id);
 CREATE POLICY "Participants can manage rooms" ON public.chat_rooms FOR ALL USING (auth.uid() = admin_id OR auth.uid() = student_id);
 
--- Messages Table
+-- Messages (메시지) 테이블
 CREATE TABLE public.messages (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     room_id UUID REFERENCES public.chat_rooms(id) NOT NULL,
@@ -106,7 +108,7 @@ CREATE TABLE public.messages (
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
--- Policies for Messages
+-- 메시지 정책
 CREATE POLICY "Participants can view messages" ON public.messages FOR SELECT USING (
   EXISTS (SELECT 1 FROM public.chat_rooms WHERE id = messages.room_id AND (admin_id = auth.uid() OR student_id = auth.uid()))
 );
@@ -115,41 +117,43 @@ CREATE POLICY "Participants can insert messages" ON public.messages FOR INSERT W
 );
 ```
 
-#### Edge Functions
-This project uses a Supabase Edge Function `create-student` to handle secure user creation (bypassing client-side restrictions).
+#### Edge Functions (서버리스 함수)
+이 프로젝트는 관리자가 앱 내에서 새 학생 계정을 생성할 때 클라이언트의 제약을 우회하고 안전하게 처리하기 위해 Supabase Edge Function (`create-student`)을 사용합니다.
 
-1. Install Supabase CLI.
-2. Login to Supabase CLI: `supabase login`
-3. Deploy the function (located in `supabase/functions/create-student`):
+1. 로컬 컴퓨터에 Supabase CLI를 설치합니다.
+2. CLI 로그인: `supabase login`
+3. 함수 배포 (`supabase/functions/create-student` 폴더 기준):
    ```bash
    supabase functions deploy create-student --no-verify-jwt
    ```
-   *Note: `verify_jwt` is set to false to allow manual verification and better error handling.*
+   *참고: 더 나은 에러 핸들링과 수동 검증을 위해 `verify_jwt` 옵션을 끄고 배포합니다.*
 
-### 2. Flutter App Configuration
-1. Navigate to `student_app/lib/core/config/supabase_config.dart`.
-2. Update the `url` and `anonKey` with your own Supabase project credentials.
+### 2. Flutter 앱 설정
+1. `student_app/lib/core/config/supabase_config.dart` 파일을 편집기로 엽니다.
+2. 본인의 Supabase 프로젝트 URL과 Anon Key로 값을 변경합니다.
 
 ```dart
 class SupabaseConfig {
-  static const String url = 'YOUR_SUPABASE_URL';
-  static const String anonKey = 'YOUR_SUPABASE_ANON_KEY';
+  static const String url = '여기에_SUPABASE_URL_입력';
+  static const String anonKey = '여기에_SUPABASE_ANON_KEY_입력';
 }
 ```
 
-### 3. Run the App
+### 3. 앱 실행 방법
+터미널에서 `student_app` 폴더로 이동한 후 다음 명령어를 실행합니다.
+
 ```bash
 cd student_app
 flutter pub get
 flutter run
 ```
 
-## Folder Structure
-- `student_app/lib`: Flutter application source code.
-  - `core`: Core configurations and utilities.
-  - `features`: Feature-based modules (Auth, Admin, Student).
-  - `shared`: Shared widgets and models.
-- `supabase`: Supabase Edge Functions.
+## 폴더 구조 설명
+- `student_app/lib`: Flutter 애플리케이션 소스 코드
+  - `core`: 앱 전반의 설정 및 유틸리티 (Config, Logger 등)
+  - `features`: 기능별 모듈 (Auth-인증, Admin-관리자, Student-학생)
+  - `shared`: 공용 위젯 및 데이터 모델
+- `supabase`: Supabase 설정 및 Edge Functions 소스
 
-## License
+## 라이선스
 MIT
